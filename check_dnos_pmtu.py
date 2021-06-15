@@ -69,13 +69,32 @@ def create_parser():
         "--do-clear-bgp-neighbors",
         action="store_true",
         dest="do_clear_bgp_neighbors",
-        help="run clear bgp neighbors *",
+        default=True,
+        help="run `clear bgp neighbors *` (default)",
     )
     parser.add_argument(
         "--no-clear-bgp-neighbors",
         action="store_false",
         dest="do_clear_bgp_neighbors",
         help="keep bgp neighbors",
+    )
+    parser.add_argument(
+        "--timeout-himss-reached",
+        type=int,
+        default=30,
+        help="Timeout for initially reaching himss (30)",
+    )
+    parser.add_argument(
+        "--timeout-lomss-reached",
+        type=int,
+        default=30,
+        help="Timeout for initially reaching lomss (30)",
+    )
+    parser.add_argument(
+        "--timeout-himss-restored",
+        type=int,
+        default=300,
+        help="Timeout for initially reaching lomss (300)",
     )
 
     return parser
@@ -102,8 +121,11 @@ class Opts:
 
     sshpass_filename = os.path.expanduser("~/.drivenets-default-dnroot-passwd.txt")
 
-    do_clear_bgp_neighbors: bool = True
-    steady_sleep_time = 0
+    do_clear_bgp_neighbors: bool
+    timeout_himss_reached: int
+    timeout_lomss_reached: int
+    timeout_himss_restored: int
+    steady_sleep_time = 3
 
 
 class DNOSPexpectException(Exception):
@@ -161,29 +183,31 @@ class Main:
 
     def init_opts(self, argv=None):
         self.opts = opts = Opts()
+
+        # setup-specific settings:
         opts.client_dnos_hostname = "dn40-re01"
         opts.middle_dnos_hostname = "WC81917W80011"
         opts.server_dnos_hostname = "kvm29-ncc0"
-
         opts.iface_client = "ge100-0/0/3"
         opts.iface_middle_client = "ge100-0/0/3"
         opts.iface_middle_server = "ge100-0/0/18.2232"
         opts.iface_server = "ge100-0/0/18.2232"
         opts.ipaddr_client = "18.18.18.18"
         opts.ipaddr_server = "11.11.11.11"
-        opts.himtu = 9100
+
         create_parser().parse_args(argv, self.opts)
 
         if not Path(opts.sshpass_filename).exists():
             raise Exception(f"Please write ssh password to {opts.sshpass_filename}")
 
         def _wrap_sshpass(hostname):
-            return f"sshpass -f {shlex.quote(opts.sshpass_filename)} ssh dnroot@{hostname}"
+            return (
+                f"sshpass -f {shlex.quote(opts.sshpass_filename)} ssh dnroot@{hostname}"
+            )
 
         opts.client_dnos_spawn_cmd = _wrap_sshpass(opts.client_dnos_hostname)
         opts.middle_dnos_spawn_cmd = _wrap_sshpass(opts.middle_dnos_hostname)
         opts.server_dnos_spawn_cmd = _wrap_sshpass(opts.server_dnos_hostname)
-
 
     def init_bgp(self):
         """Initialize bgp (clearing neighbors)"""
@@ -214,7 +238,9 @@ class Main:
         try:
             session_output = dnos_cmd(self.spawn_client, cmd)
         except DNOSPexpectException:
-            logger.warning("failed `show system sessions`, will try again later", exc_info=True)
+            logger.warning(
+                "failed `show system sessions`, will try again later", exc_info=True
+            )
             return None
         session_output = session_output.strip()
         if not session_output:
@@ -244,25 +270,41 @@ class Main:
         mss = self.read_last_ss_mss()
         return mss and mss >= self.opts.himtu - self.opts.mss_margin
 
+    def steady_sleep(self):
+        if self.opts.steady_sleep_time:
+            logger.info(
+                "sleep %.3f seconds in steady state", self.opts.steady_sleep_time
+            )
+            time.sleep(self.opts.steady_sleep_time)
+
     def run_pmtu_test(self):
         self.set_middle_pmtu(self.opts.himtu)
 
         with contexttimer.Timer() as t:
-            waiting.wait(self.check_himss_reached, timeout_seconds=30)
+            waiting.wait(
+                self.check_himss_reached,
+                timeout_seconds=self.opts.timeout_himss_reached,
+            )
             logger.info("ok - reached hi mss in %.3f seconds", t.elapsed)
-        time.sleep(self.opts.steady_sleep_time)
+        self.steady_sleep()
 
         self.set_middle_pmtu(self.opts.lomtu)
 
         with contexttimer.Timer() as t:
-            waiting.wait(self.check_lomss_reached, timeout_seconds=300)
+            waiting.wait(
+                self.check_lomss_reached,
+                timeout_seconds=self.opts.timeout_lomss_reached,
+            )
             logger.info("ok - reached lo mss in %.3f seconds", t.elapsed)
-        time.sleep(self.opts.steady_sleep_time)
+        self.steady_sleep()
 
         self.set_middle_pmtu(self.opts.himtu)
 
         with contexttimer.Timer() as t:
-            waiting.wait(self.check_himss_restored, timeout_seconds=300)
+            waiting.wait(
+                self.check_himss_restored,
+                timeout_seconds=self.opts.timeout_himss_restored,
+            )
             logger.info("ok - reached restored hi mss in %.3f seconds", t.elapsed)
 
     def init_logging(self):
