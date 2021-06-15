@@ -270,39 +270,42 @@ class Main:
             )
             time.sleep(self.opts.steady_sleep_time)
 
+    def _verbose_wait(self, func, timeout_seconds: int, message: str):
+        with contexttimer.Timer() as t:
+            waiting.wait(func, timeout_seconds=timeout_seconds)
+            logger.info("ok - %s in %.3fsec", message, t.elapsed)
+
     def run_pmtu_test(self):
         dnos_cmd(self.spawn_server, "show bgp summary", no_more=True)
         dnos_cmd(self.spawn_client, "show bgp summary", no_more=True)
+
+        # reach himtu:
         self.set_middle_pmtu(self.opts.himtu)
         if self.opts.do_clear_bgp_neighbors:
             dnos_cmd(self.spawn_client, "clear bgp neighbor *")
-
-        with contexttimer.Timer() as t:
-            waiting.wait(
-                self.check_himss_reached,
-                timeout_seconds=self.opts.timeout_himss_reached,
-            )
-            logger.info("ok - reached hi mss in %.3f seconds", t.elapsed)
+        self._verbose_wait(
+            self.check_himss_reached,
+            timeout_seconds=self.opts.timeout_himss_reached,
+            message="reached hi mss",
+        )
         self.steady_sleep()
 
+        # reach lomtu:
         self.set_middle_pmtu(self.opts.lomtu)
-
-        with contexttimer.Timer() as t:
-            waiting.wait(
-                self.check_lomss_reached,
-                timeout_seconds=self.opts.timeout_lomss_reached,
-            )
-            logger.info("ok - reached lo mss in %.3f seconds", t.elapsed)
+        self._verbose_wait(
+            self.check_lomss_reached,
+            timeout_seconds=self.opts.timeout_lomss_reached,
+            message="reached lo mss",
+        )
         self.steady_sleep()
 
+        # restored himtu:
         self.set_middle_pmtu(self.opts.himtu)
-
-        with contexttimer.Timer() as t:
-            waiting.wait(
-                self.check_himss_restored,
-                timeout_seconds=self.opts.timeout_himss_restored,
-            )
-            logger.info("ok - reached restored hi mss in %.3f seconds", t.elapsed)
+        self._verbose_wait(
+            self.check_himss_restored,
+            timeout_seconds=self.opts.timeout_himss_restored,
+            message="reached restored hi mss",
+        )
 
     def init_logging(self):
         logging.basicConfig(level=logging.INFO)
