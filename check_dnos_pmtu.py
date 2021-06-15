@@ -261,6 +261,7 @@ class Main:
 
     def check_himss_restored(self):
         mss = self.read_last_ss_mss()
+        logger.info("waiting to restore mss=%r nearing himtu=%r", mss, self.opts.himtu)
         return mss and mss >= self.opts.himtu - self.opts.mss_margin
 
     def steady_sleep(self):
