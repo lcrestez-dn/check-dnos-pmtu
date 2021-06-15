@@ -36,7 +36,9 @@ def bump_logging(delta, logger_name=None):
 
 def create_parser():
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__,
+        usage="check_dnos_pmtu.py",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     class IncreaseLogLevelAction(argparse.Action):
