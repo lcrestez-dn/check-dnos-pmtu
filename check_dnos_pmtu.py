@@ -11,10 +11,12 @@ IxNetwork is running on win-client153
 """
 
 import logging
+import os
 import sys
 import textwrap
 import time
 import typing
+import shlex
 import argparse
 from pathlib import Path
 
@@ -96,6 +98,8 @@ class Opts:
     himtu = 9100
     mss_margin = 100
 
+    sshpass_filename = os.path.expanduser("~/.drivenets-default-dnroot-passwd.txt")
+
     do_clear_bgp_neighbors: bool = True
     steady_sleep_time = 0
 
@@ -159,13 +163,6 @@ class Main:
         opts.middle_dnos_hostname = "WC81917W80011"
         opts.server_dnos_hostname = "kvm29-ncc0"
 
-        def _wrap_sshpass(hostname):
-            return f"sshpass -f ~/.drivenets-default-dnroot-passwd.txt ssh dnroot@{hostname}"
-
-        opts.client_dnos_spawn_cmd = _wrap_sshpass(opts.client_dnos_hostname)
-        opts.middle_dnos_spawn_cmd = _wrap_sshpass(opts.middle_dnos_hostname)
-        opts.server_dnos_spawn_cmd = _wrap_sshpass(opts.server_dnos_hostname)
-
         opts.iface_client = "ge100-0/0/3"
         opts.iface_middle_client = "ge100-0/0/3"
         opts.iface_middle_server = "ge100-0/0/18.2232"
@@ -174,6 +171,17 @@ class Main:
         opts.ipaddr_server = "11.11.11.11"
         opts.himtu = 9100
         create_parser().parse_args(argv, self.opts)
+
+        if not Path(opts.sshpass_filename).exists():
+            raise Exception(f"Please write ssh password to {opts.sshpass_filename}")
+
+        def _wrap_sshpass(hostname):
+            return f"sshpass -f {shlex.quote(opts.sshpass_filename)} ssh dnroot@{hostname}"
+
+        opts.client_dnos_spawn_cmd = _wrap_sshpass(opts.client_dnos_hostname)
+        opts.middle_dnos_spawn_cmd = _wrap_sshpass(opts.middle_dnos_hostname)
+        opts.server_dnos_spawn_cmd = _wrap_sshpass(opts.server_dnos_hostname)
+
 
     def init_bgp(self):
         """Initialize bgp (clearing neighbors)"""
