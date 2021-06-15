@@ -100,6 +100,10 @@ class Opts:
     steady_sleep_time = 0
 
 
+class DNOSPexpectException(Exception):
+    pass
+
+
 def dnos_cmd(spawn, cmd, no_more=False, timeout=-1) -> str:
     """Run command on DNOS console via pexpect"""
     if no_more:
@@ -108,7 +112,7 @@ def dnos_cmd(spawn, cmd, no_more=False, timeout=-1) -> str:
     result = spawn.expect(["ERROR:.*", "# $"])
     if result == 0:
         logger.warning("Received DNOS CLI ERROR: spawn=%s", spawn.buffer)
-        raise Exception(f"DNOS CLI ERROR: {spawn!s}")
+        raise DNOSPexpectException(f"DNOS CLI ERROR: {spawn!s}")
     elif result != 1:
         raise Exception(f"Unexpected expect result index {result}")
 
@@ -197,7 +201,11 @@ class Main:
         cmd = f"show system sessions | include 179 | include {self.opts.ipaddr_server}"
         if self.opts.ipaddr_client:
             cmd += f" | include {self.opts.ipaddr_client}"
-        session_output = dnos_cmd(self.spawn_client, cmd)
+        try:
+            session_output = dnos_cmd(self.spawn_client, cmd)
+        except DNOSPexpectException:
+            logger.warning("failed `show system sessions`, will try again later", exc_info=True)
+            return None
         session_output = session_output.strip()
         if not session_output:
             logger.info("no relevant bgp session currently established")
