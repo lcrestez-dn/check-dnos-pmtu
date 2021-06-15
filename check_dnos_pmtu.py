@@ -209,13 +209,6 @@ class Main:
         opts.middle_dnos_spawn_cmd = _wrap_sshpass(opts.middle_dnos_hostname)
         opts.server_dnos_spawn_cmd = _wrap_sshpass(opts.server_dnos_hostname)
 
-    def init_bgp(self):
-        """Initialize bgp (clearing neighbors)"""
-        dnos_cmd(self.spawn_server, "show bgp summary", no_more=True)
-        dnos_cmd(self.spawn_client, "show bgp summary", no_more=True)
-        if self.opts.do_clear_bgp_neighbors:
-            dnos_cmd(self.spawn_client, "clear bgp neighbor *")
-
     def set_middle_pmtu(self, mtu: int):
         mtu_switch_dnos = self.spawn_middle
         mtu_switch_iface = self.opts.iface_middle_server
@@ -278,7 +271,11 @@ class Main:
             time.sleep(self.opts.steady_sleep_time)
 
     def run_pmtu_test(self):
+        dnos_cmd(self.spawn_server, "show bgp summary", no_more=True)
+        dnos_cmd(self.spawn_client, "show bgp summary", no_more=True)
         self.set_middle_pmtu(self.opts.himtu)
+        if self.opts.do_clear_bgp_neighbors:
+            dnos_cmd(self.spawn_client, "clear bgp neighbor *")
 
         with contexttimer.Timer() as t:
             waiting.wait(
@@ -314,7 +311,6 @@ class Main:
         self.init_logging()
         self.init_opts(argv)
         self.init_dnos_setup()
-        self.init_bgp()
         self.run_pmtu_test()
 
 
