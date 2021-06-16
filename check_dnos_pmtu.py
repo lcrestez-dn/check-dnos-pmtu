@@ -224,7 +224,7 @@ class Main:
             dnos_cmd(mtu_switch_dnos, script)
             logger.info("mtu increased in %.3f seconds", t.elapsed)
 
-    def read_last_ss_mss(self) -> typing.Optional[int]:
+    def read_last_mss(self) -> typing.Optional[int]:
         cmd = f"show system sessions | include 179 | include {self.opts.ipaddr_server}"
         if self.opts.ipaddr_client:
             cmd += f" | include {self.opts.ipaddr_client}"
@@ -250,17 +250,17 @@ class Main:
         return value
 
     def check_lomss_reached(self):
-        mss = self.read_last_ss_mss()
+        mss = self.read_last_mss()
         logger.info("waiting for mss=%r below lomtu=%r", mss, self.opts.lomtu)
         return mss and mss <= self.opts.lomtu
 
     def check_himss_reached(self):
-        mss = self.read_last_ss_mss()
+        mss = self.read_last_mss()
         logger.info("waiting for mss=%r nearing himtu=%r", mss, self.opts.himtu)
         return mss and mss >= self.opts.himtu - self.opts.mss_margin
 
     def check_himss_restored(self):
-        mss = self.read_last_ss_mss()
+        mss = self.read_last_mss()
         logger.info("waiting to restore mss=%r nearing himtu=%r", mss, self.opts.himtu)
         return mss and mss >= self.opts.himtu - self.opts.mss_margin
 
