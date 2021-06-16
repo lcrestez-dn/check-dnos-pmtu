@@ -159,6 +159,34 @@ def dnos_wait_loading(spawn, timeout=-1):
     logger.debug("received dncli command prompt")
 
 
+def parse_table(input: str, expected_columns: int = None) -> typing.List[typing.List[str]]:
+    """Parse a table with pipe separator.
+
+    Returns a list of lists of strings
+    Header not supported
+    """
+    table = []
+    lines = input.splitlines()
+    for line in lines:
+        if line.strip() == "":
+            continue
+        row = line.split("|")
+        if len(row) < 3:
+            raise ValueError(
+                f"Need at least two column separators, failed to parse line {line!r}"
+            )
+        if row[0].strip() != "":
+            raise ValueError(f"Unexpected row heading {row[0]!r}")
+        if row[-1].strip() != "":
+            raise ValueError(f"Unexpected row trailer {row[-1]!r}")
+        row = row[1:-1]
+        row = [item.strip() for item in row]
+        if expected_columns is not None and len(row) != expected_columns:
+            raise ValueError(f"got {len(row)} columns instead of {expected_columns}")
+        table.append(row)
+    return table
+
+
 class Main:
     last_mss_value: typing.Optional[int] = None
 
@@ -226,45 +254,68 @@ class Main:
             dnos_cmd(mtu_switch_dnos, script)
             logger.info("mtu increased in %.3f seconds", t.elapsed)
 
-    def read_last_mss(self) -> typing.Optional[int]:
-        cmd = f"show system sessions | include 179 | include {self.opts.ipaddr_server}"
+    def read_last_mss(self) -> int:
+        cmd = "show system sessions"
+        if self.opts.ipaddr_server:
+            cmd += f" | include {self.opts.ipaddr_server}"
         if self.opts.ipaddr_client:
             cmd += f" | include {self.opts.ipaddr_client}"
+        # last included value is highlighted which makes parsing harder
+        cmd += " | include 179"
+
+        session_output = dnos_cmd(self.spawn_client, cmd)
+        #logger.info("%r", session_output)
+
+        found_entry = None
+        tab = parse_table(session_output)
+        #logger.info("table:\n%r", tab)
+        for row in tab:
+            if row[1] != 'TCP':
+                logger.debug("skip non-TCP %r", row)
+                continue
+            if row[4] != 'ESTABLISHED':
+                logger.debug("skip non-ESTABLISHED %r", row)
+                continue
+            if self.opts.ipaddr_client:
+                row_ipaddr_client = row[2].split(":")[0]
+                if row_ipaddr_client != self.opts.ipaddr_client:
+                    logger.debug("skip unrelated client ipaddr %r on %r", row_ipaddr_client, row)
+                    continue
+            if self.opts.ipaddr_server:
+                row_ipaddr_server = row[3].split(":")[0]
+                if row_ipaddr_server != self.opts.ipaddr_server:
+                    logger.debug("skip unrelated server ipaddr %r on %r", row_ipaddr_server, row)
+                    continue
+            if found_entry:
+                raise Exception("Multiple matching TCP sessions %r and %r" % (found_row, row))
+            found_entry = row
+
+        if not found_entry:
+            raise ValueError("No matching TCP sessions")
+
+        return int(found_entry[7])
+
+    def try_read_last_mss(self) -> typing.Optional[int]:
         try:
-            session_output = dnos_cmd(self.spawn_client, cmd)
-        except DNOSPexpectException:
-            logger.warning(
-                "failed `show system sessions`, will try again later", exc_info=True
-            )
+            value = self.read_last_mss()
+        except:
+            logger.warning("failed to determine current mss", exc_info=True)
             return None
-        session_output = session_output.strip()
-        if not session_output:
-            logger.info("no relevant bgp session currently established")
-            return None
-        try:
-            value_str = session_output.split("|")[-2]
-            value = int(value_str)
-        except ValueError:
-            logger.info(
-                "failed to parse bgp tcp session info output: %r", session_output
-            )
-            return None
-        # save this:
         self.last_mss_value = value
         return value
 
     def check_lomss_reached(self):
-        mss = self.read_last_mss()
+        mss = self.try_read_last_mss()
         logger.info("waiting for mss=%r below lomtu=%r", mss, self.opts.lomtu)
         return mss and mss <= self.opts.lomtu
 
     def check_himss_reached(self):
-        mss = self.read_last_mss()
+        mss = self.try_read_last_mss()
         logger.info("waiting for mss=%r nearing himtu=%r", mss, self.opts.himtu)
         return mss and mss >= self.opts.himtu - self.opts.mss_margin
 
     def check_himss_restored(self):
-        mss = self.read_last_mss()
+        mss = self.try_read_last_mss()
         logger.info("waiting to restore mss=%r nearing himtu=%r", mss, self.opts.himtu)
         return mss and mss >= self.opts.himtu - self.opts.mss_margin
 
