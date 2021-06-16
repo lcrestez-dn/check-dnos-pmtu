@@ -160,6 +160,8 @@ def dnos_wait_loading(spawn, timeout=-1):
 
 
 class Main:
+    last_mss_value: typing.Optional[int] = None
+
     def _pexpect_spawn_shell(self, cmd: str, **kw):
         logger.info("RUN: %s", cmd)
         return pexpect.spawn(
@@ -247,6 +249,8 @@ class Main:
                 "failed to parse bgp tcp session info output: %r", session_output
             )
             return None
+        # save this:
+        self.last_mss_value = value
         return value
 
     def check_lomss_reached(self):
@@ -312,10 +316,13 @@ class Main:
         logging.basicConfig(level=logging.INFO)
 
     def main(self, argv=None):
-        self.init_logging()
-        self.init_opts(argv)
-        self.init_dnos_setup()
-        self.run_pmtu_test()
+        try:
+            self.init_logging()
+            self.init_opts(argv)
+            self.init_dnos_setup()
+            self.run_pmtu_test()
+        finally:
+            logger.info("last mss value: %s", self.last_mss_value)
 
 
 if __name__ == "__main__":
