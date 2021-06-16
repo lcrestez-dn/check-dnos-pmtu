@@ -287,7 +287,7 @@ class Main:
                     logger.debug("skip unrelated server ipaddr %r on %r", row_ipaddr_server, row)
                     continue
             if found_entry:
-                raise Exception("Multiple matching TCP sessions %r and %r" % (found_row, row))
+                raise Exception("Multiple matching TCP sessions %r and %r" % (found_entry, row))
             found_entry = row
 
         if not found_entry:
